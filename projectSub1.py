@@ -6,9 +6,6 @@ def make_frames(sender_device,receiver_device,message): #frame making
     message = {'Data':message,'H2':[sender_device.address, receiver_device.address]}
     return message
 
-    
-
-
 def send_data(d1,message,ack_msg=False):
     print("Frame : {}".format(message))
     for i in d1.connected_to:
@@ -76,12 +73,64 @@ class hub_device(devices):
 
 
 
+class Bridge(devices):
+    def __init__(self, id, address, ports=['a', 'b'], active=True):
+        self.mac_table = {}
+        self.mac_table[ports[0]] = []
+        self.mac_table[ports[1]] = []
+        self.ports = ports
+        self.address = address
+        self.id = id
+        self.active = active
+        self.connected_to = []
+
+    def chain_send(self, message, sender, ack_msg=False):
+
+        if message['H2'][0] not in self.mac_table[sender.port]:
+            self.mac_table[sender.port].append(message['H2'][0])
+        if message['H2'][1] in self.mac_table[sender.port]:
+            return
+        elif message['H2'][1] not in self.mac_table[sender.port]:
+            # Send Message To Port
+            for i in self.connected_to:
+                if i.port != sender.port:
+                    i.chain_send(message, self, ack_msg)
 
 
+class Switch(Bridge):
+    def __init__(self, id, address, ports=['a', 'b', 'c', 'd', 'e'], active=True):
+        self.id = id
+        self.mac_table = {}
+        self.address = address
+        self.ports = ports
+        for i in ports:
+            self.mac_table[i] = []
+        self.connected_to = []
+        self.active = active
+
+    def chain_send(self, message, sender, ack_msg=False):
+        if message['H2'][0] not in self.mac_table[sender.port]:
+            self.mac_table[sender.port].append(message['H2'][0])
 
 
+        if message['H2'][1] in self.mac_table[sender.port]:
+            return
+        else:
+            forward_port = None
+            for key in self.mac_table.keys():
+                if message['H2'][1] in self.mac_table[key]:
+                    forward_port = key
+                    break
+            if(forward_port is not None):
+                for i in self.connected_to:
+                    if i.port == forward_port:
+                        # if type(i) == hub_device or :
+                        i.chain_send(message,self,ack_msg)
 
-
+            else:
+                for i in self.connected_to:
+                    if i.port != sender.port:
+                        i.chain_send(message, self, ack_msg)
 
 
 class Topology:
@@ -186,8 +235,6 @@ def get_token(num_devices):
 
 # DRIVER CODE ------>>
 
-
-
 topology1 = Topology()
 
 D0 = devices(topology1.td , create_mac_address(),0)
@@ -216,6 +263,8 @@ topology1.add_device_hub(hub_device(topology1.td, 0))  #6
 topology1.add_device_hub(hub_device(topology1.td, 1))  #7
 topology1.add_device_hub(hub_device(topology1.td, 2))  #8
 
+S1 = Switch(topology1.td,create_mac_address(),[0,1,2])
+topology1.add_device_switch(S1)   #9
 
 token_gen = threading.Thread(target=get_token, args=(topology1.num_devices,))
 token_gen.start()
@@ -227,3 +276,10 @@ topology1.make_connection_between(1, 6)
 topology1.make_connection_between(0, 6)
 topology1.make_connection_between(4,8)
 topology1.make_connection_between(5,8)
+
+#switching the switch
+topology1.make_connection_between(6,9)
+topology1.make_connection_between(7,9)
+topology1.make_connection_between(9,8)
+
+topology1.stop_and_wait(D2,D4,"Koushik Lanka")
